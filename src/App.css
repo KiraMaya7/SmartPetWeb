@@ -1,0 +1,432 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', 'Poppins', 'Inter', sans-serif;
+  background: #efefef;
+}
+
+.layout {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  position: relative;
+}
+
+/* ========== NOTIFICACIONES ========== */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: white;
+  padding: 15px 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  z-index: 1000;
+  animation: slideIn 0.3s ease;
+  max-width: 300px;
+  font-size: 0.9rem;
+  white-space: pre-line;
+}
+
+.notification-success {
+  border-left: 4px solid #28a745;
+  background: #f0fff4;
+}
+
+.notification-error {
+  border-left: 4px solid #dc3545;
+  background: #fff0f0;
+}
+
+.notification-info {
+  border-left: 4px solid #17a2b8;
+  background: #f0faff;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ========== SIDEBAR ========== */
+.sidebar {
+  width: 90px;
+  background: #d4d4d4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 20px;
+  gap: 15px;
+}
+
+.logo {
+  font-size: 32px;
+  margin-bottom: 20px;
+}
+
+.menu-item {
+  width: 55px;
+  height: 55px;
+  background: #e85d4a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: white;
+}
+
+.menu-item.active {
+  background: white;
+  color: #e85d4a;
+  border: 3px solid #e85d4a;
+}
+
+.menu-item:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
+}
+
+/* ========== MAIN CONTENT ========== */
+.content {
+  flex: 1;
+  padding: 20px 25px;
+  overflow-y: auto;
+}
+
+/* ========== HEADER ========== */
+.header {
+  background: #e85d4a;
+  padding: 15px 25px;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: white;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.connected {
+  background: #28a745;
+  box-shadow: 0 0 5px #28a745;
+}
+
+.status-dot.disconnected {
+  background: #dc3545;
+}
+
+.paw {
+  font-size: 28px;
+}
+
+.user-avatar {
+  font-size: 28px;
+  background: rgba(255,255,255,0.2);
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* ========== CARDS ========== */
+.card-box {
+  background: #c8c8c8;
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.card-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #333;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+}
+
+/* ========== PROGRESS BAR ========== */
+.progress-bar-custom {
+  background: #e8e8e8;
+  height: 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progress-fill {
+  background: #f5d742;
+  height: 100%;
+  border-radius: 12px;
+  transition: width 0.3s ease;
+}
+
+.percentage-value {
+  display: inline-block;
+  margin-top: 8px;
+  font-weight: bold;
+  color: #555;
+  font-size: 0.85rem;
+}
+
+/* ========== CÍRCULO ========== */
+.circle-green {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  border: 5px solid #3dbb4c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  background: white;
+}
+
+.circle-green span {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #3dbb4c;
+}
+
+.success-text {
+  color: #3dbb4c;
+  font-weight: 600;
+  margin-top: 8px;
+  font-size: 0.8rem;
+}
+
+/* ========== BOTONES ========== */
+.btn-feed {
+  background: #e85d4a;
+  color: white;
+  border: none;
+  padding: 12px 15px;
+  border-radius: 40px;
+  font-weight: bold;
+  font-size: 0.85rem;
+  width: 100%;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.btn-feed:hover, .btn-feed-small:hover {
+  transform: scale(1.02);
+  cursor: pointer;
+  filter: brightness(0.95);
+}
+
+.btn-feed-small {
+  background: #e85d4a;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 40px;
+  font-weight: bold;
+  font-size: 0.7rem;
+  width: 100%;
+  margin-top: 8px;
+  transition: all 0.2s ease;
+}
+
+.small-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 15px;
+  font-size: 0.7rem;
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+.small-btn-outline {
+  background: transparent;
+  border: 1px solid #3dbb4c;
+  color: #3dbb4c;
+  padding: 4px 10px;
+  border-radius: 15px;
+  font-size: 0.7rem;
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+.small-btn-add {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.btn-save {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* ========== TEXTOS GRANDES ========== */
+.time-display {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #333;
+  font-family: 'Courier New', monospace;
+  margin: 0;
+}
+
+.amount-display {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #333;
+  margin: 0;
+}
+
+/* ========== SCHEDULE LIST ========== */
+.schedule-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.schedule-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.5);
+  padding: 10px 15px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+
+.schedule-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.schedule-icon {
+  font-size: 24px;
+}
+
+.schedule-detail {
+  font-size: 0.7rem;
+  color: #666;
+}
+
+.delete-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.delete-btn:hover {
+  background: #c82333;
+}
+
+/* ========== ACTION BUTTONS ========== */
+.action-btn {
+  background: #e85d4a;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 25px;
+  font-weight: bold;
+  font-size: 0.8rem;
+  width: 100%;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(0.95);
+}
+
+/* ========== ADD FORM ========== */
+.add-form {
+  background: rgba(255,255,255,0.5);
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.form-control-sm {
+  font-size: 0.8rem;
+  padding: 5px 8px;
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 70px;
+  }
+  
+  .menu-item {
+    width: 45px;
+    height: 45px;
+    font-size: 20px;
+  }
+  
+  .time-display, .amount-display {
+    font-size: 1.2rem;
+  }
+  
+  .btn-feed {
+    font-size: 0.7rem;
+    padding: 10px 8px;
+  }
+  
+  .circle-green {
+    width: 70px;
+    height: 70px;
+  }
+  
+  .circle-green span {
+    font-size: 1.3rem;
+  }
+  
+  .action-btn {
+    font-size: 0.7rem;
+    padding: 8px;
+  }
+  
+  .notification {
+    max-width: 250px;
+    font-size: 0.8rem;
+  }
+}
