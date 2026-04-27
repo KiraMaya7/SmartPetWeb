@@ -1,37 +1,150 @@
 import React, { useState, useEffect } from 'react'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './App.css'
+import { db } from './firebase'
+import { 
+  doc, onSnapshot, updateDoc, 
+  collection, addDoc, getDoc, setDoc
+} from 'firebase/firestore'
 
 function App() {
-  // ========== ESTADOS PRINCIPALES ==========
-  const [battery, setBattery] = useState(55)
-  const [hopper, setHopper] = useState(90)
-  const [nextMeal, setNextMeal] = useState('10:45:34')
-  const [consumed, setConsumed] = useState(555)
+  const [battery, setBattery] = useState(85)
+  const [hopper, setHopper] = useState(75)
+  const [nextMeal, setNextMeal] = useState('--:--:--')
+  const [consumed, setConsumed] = useState(0)
   const [isConnected, setIsConnected] = useState(true)
-  const [lastSync, setLastSync] = useState('hace 2 minutos')
+  const [lastSync, setLastSync] = useState('conectado')
+  const [cargando, setCargando] = useState(true)
   
-  // ========== PROGRAMACIÓN DE COMIDAS ==========
-  const [schedules, setSchedules] = useState([
-    { id: 1, name: 'DESAYUNO', time: '08:00', amount: 150, icon: '☀️', active: true },
-    { id: 2, name: 'CENA', time: '20:00', amount: 200, icon: '🌙', active: true }
-  ])
+  const [schedules, setSchedules] = useState([])
   
   const [showAddForm, setShowAddForm] = useState(false)
   const [newMealName, setNewMealName] = useState('')
   const [newMealTime, setNewMealTime] = useState('12:00')
   const [newMealAmount, setNewMealAmount] = useState(100)
+  const [tipoProgramacion, setTipoProgramacion] = useState('recurrente')
+  const [selectedDays, setSelectedDays] = useState([])
+  const [selectedDate, setSelectedDate] = useState('')
   
-  // ========== NOTIFICACIONES ==========
   const [notification, setNotification] = useState(null)
 
-  // ========== EFECTO: ACTUALIZAR PRÓXIMA COMIDA ==========
+  const dispositivoId = 'smartpet_001'
+
+  const diasSemana = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM']
+  const diasCompletos = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+  const showNotification = (message, type = 'info') => {
+    setNotification({ message, type })
+    setTimeout(() => setNotification(null), 3000)
+  }
+
+  const formatearFecha = (fecha) => {
+    if (!fecha) return ''
+    try {
+      if (typeof fecha === 'string') {
+        const date = new Date(fecha)
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        }
+      }
+      if (fecha && typeof fecha.toDate === 'function') {
+        return fecha.toDate().toLocaleDateString('es-ES')
+      }
+      return ''
+    } catch (error) {
+      return ''
+    }
+  }
+
+  const getToday = () => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  useEffect(() => {
+    const dispositivoRef = doc(db, 'dispositivos', dispositivoId)
+    
+    const cargarDatos = async () => {
+      try {
+        const docSnap = await getDoc(dispositivoRef)
+        
+        if (docSnap.exists()) {
+          const data = docSnap.data()
+          setBattery(data.bateria || 85)
+          setHopper(data.tolva || 75)
+          setConsumed(data.consumidoHoy || 0)
+          
+          if (data.horarios && Array.isArray(data.horarios)) {
+            const horariosValidos = data.horarios.filter(h => h && typeof h === 'object')
+            setSchedules(horariosValidos)
+          }
+        } else {
+          await setDoc(dispositivoRef, {
+            bateria: 85,
+            tolva: 75,
+            consumidoHoy: 0,
+            limiteDiario: 500,
+            horarios: [],
+            creadoEn: new Date()
+          })
+        }
+      } catch (error) {
+        console.error('Error:', error)
+        showNotification('Error conectando a Firebase', 'error')
+      }
+      setCargando(false)
+    }
+    
+    cargarDatos()
+    
+    const unsubscribe = onSnapshot(dispositivoRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data()
+        setBattery(data.bateria || 85)
+        setHopper(data.tolva || 75)
+        setConsumed(data.consumidoHoy || 0)
+        if (data.horarios && Array.isArray(data.horarios)) {
+          setSchedules(data.horarios)
+        }
+      }
+    })
+    
+    return () => unsubscribe()
+  }, [])
+
+  const guardarHorarios = async (nuevosHorarios) => {
+    try {
+      const dispositivoRef = doc(db, 'dispositivos', dispositivoId)
+      await updateDoc(dispositivoRef, { horarios: nuevosHorarios })
+      showNotification(' Guardado en la nube', 'success')
+      return true
+    } catch (error) {
+      showNotification(' Error al guardar', 'error')
+      return false
+    }
+  }
+
+  const actualizarEstado = async (nuevoConsumido, nuevaTolva, nuevaBateria) => {
+    try {
+      const dispositivoRef = doc(db, 'dispositivos', dispositivoId)
+      await updateDoc(dispositivoRef, {
+        consumidoHoy: nuevoConsumido,
+        tolva: nuevaTolva,
+        bateria: nuevaBateria,
+        ultimaComida: new Date()
+      })
+      return true
+    } catch (error) {
+      return false
+    }
+  }
+
   useEffect(() => {
     const updateNextMeal = () => {
       const now = new Date()
-      const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
-      
-      // Buscar la próxima comida del día
       let next = null
       let minDiff = Infinity
       
@@ -65,6 +178,8 @@ function App() {
         const m = Math.floor((diffSeconds % 3600) / 60)
         const s = diffSeconds % 60
         setNextMeal(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`)
+      } else {
+        setNextMeal('--:--:--')
       }
     }
     
@@ -73,38 +188,43 @@ function App() {
     return () => clearInterval(interval)
   }, [schedules])
 
-  // ========== FUNCIÓN: ALIMENTAR AHORA ==========
-  const handleFeedNow = (grams = 50) => {
+  const handleFeedNow = async (grams = 50) => {
     if (hopper <= 0) {
-      showNotification('❌ No hay suficiente comida en la tolva', 'error')
+      showNotification('No hay suficiente comida', 'error')
       return
     }
     
     const newConsumed = consumed + grams
     const newHopper = Math.max(0, hopper - (grams / 5))
+    const newBattery = Math.max(0, battery - 0.5)
     
     setConsumed(newConsumed)
     setHopper(newHopper)
-    setBattery(prev => Math.max(0, prev - 0.5))
+    setBattery(newBattery)
     
-    showNotification(`🦴 Alimentando: ${grams} gramos servidos`, 'success')
-    
-    // Simular respuesta del alimentador
-    setTimeout(() => {
-      console.log('Comida servida correctamente')
-    }, 500)
+    await actualizarEstado(newConsumed, newHopper, newBattery)
+    showNotification(`🦴 ${grams} gramos servidos`, 'success')
   }
   
-  // ========== FUNCIÓN: RESETEAR TOLVA ==========
-  const handleResetHopper = () => {
+  const handleResetHopper = async () => {
     setHopper(100)
-    showNotification('✅ Tolva reabastecida al 100%', 'success')
+    await actualizarEstado(consumed, 100, battery)
+    showNotification(' Tolva reabastecida', 'success')
   }
   
-  // ========== FUNCIÓN: AGREGAR COMIDA PROGRAMADA ==========
-  const handleAddSchedule = () => {
+  const handleAddSchedule = async () => {
     if (!newMealName.trim()) {
-      showNotification('⚠️ Ingresa un nombre para la comida', 'error')
+      showNotification(' Ingresa un nombre', 'error')
+      return
+    }
+    
+    if (tipoProgramacion === 'recurrente' && selectedDays.length === 0) {
+      showNotification(' Selecciona al menos un día', 'error')
+      return
+    }
+    
+    if (tipoProgramacion === 'fecha' && !selectedDate) {
+      showNotification(' Selecciona una fecha', 'error')
       return
     }
     
@@ -113,115 +233,82 @@ function App() {
       name: newMealName.toUpperCase(),
       time: newMealTime,
       amount: newMealAmount,
+      tipo: tipoProgramacion,
+      days: tipoProgramacion === 'recurrente' ? selectedDays : [],
+      fecha: tipoProgramacion === 'fecha' ? selectedDate : null,
       icon: newMealName.toLowerCase().includes('desayuno') ? '☀️' : 
             newMealName.toLowerCase().includes('cena') ? '🌙' : '🍽️',
-      active: true
+      active: true,
+      created: new Date().toISOString()
     }
     
-    setSchedules([...schedules, newSchedule])
-    setNewMealName('')
-    setNewMealTime('12:00')
-    setNewMealAmount(100)
-    setShowAddForm(false)
-    showNotification(`✅ Comida agregada: ${newSchedule.name}`, 'success')
+    const nuevosHorarios = [...schedules, newSchedule]
+    setSchedules(nuevosHorarios)
+    
+    const guardado = await guardarHorarios(nuevosHorarios)
+    
+    if (guardado) {
+      setNewMealName('')
+      setNewMealTime('12:00')
+      setNewMealAmount(100)
+      setSelectedDays([])
+      setSelectedDate('')
+      setShowAddForm(false)
+      showNotification(`✅ ${newSchedule.name} agregada`, 'success')
+    }
   }
   
-  // ========== FUNCIÓN: ELIMINAR COMIDA PROGRAMADA ==========
-  const handleDeleteSchedule = (id) => {
-    setSchedules(schedules.filter(schedule => schedule.id !== id))
+  // ========== ELIMINAR COMIDA PROGRAMADA ==========
+  const handleDeleteSchedule = async (id) => {
+    const nuevosHorarios = schedules.filter(schedule => schedule.id !== id)
+    setSchedules(nuevosHorarios)
+    await guardarHorarios(nuevosHorarios)
     showNotification('🗑️ Horario eliminado', 'success')
   }
-  
-  // ========== FUNCIÓN: SINCRONIZAR CON DISPOSITIVO ==========
+
+  const toggleDay = (dayIndex) => {
+    if (selectedDays.includes(dayIndex)) {
+      setSelectedDays(selectedDays.filter(d => d !== dayIndex))
+    } else {
+      setSelectedDays([...selectedDays, dayIndex])
+    }
+  }
+
   const handleSync = () => {
-    showNotification('🔄 Sincronizando con el alimentador...', 'info')
-    
-    setTimeout(() => {
-      setLastSync('ahora mismo')
-      setIsConnected(true)
-      showNotification('✅ Sincronización completada', 'success')
-    }, 1500)
+    showNotification('🔄 Sincronizado con la nube', 'success')
+    setLastSync('ahora mismo')
   }
-  
-  // ========== FUNCIÓN: VER ESTADO DEL DISPOSITIVO ==========
-  const handleGetStatus = () => {
-    showNotification(`
-      📊 ESTADO DEL DISPOSITIVO:
-      🔋 Batería: ${battery}%
-      🥣 Tolva: ${hopper}%
-      🍽️ Comido hoy: ${consumed}gr
-      📅 Comidas programadas: ${schedules.length}
-    `, 'info')
+
+  if (cargando) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div className="loader"></div>
+          <p>Cargando datos de Firebase...</p>
+        </div>
+      </div>
+    )
   }
-  
-  // ========== FUNCIÓN: ANÁLISIS ==========
-  const handleAnalisis = () => {
-    const totalWeekly = consumed * 7
-    showNotification(`
-      📈 ANÁLISIS DE CONSUMO:
-      🍖 Hoy: ${consumed}gr
-      📅 Promedio semanal: ${totalWeekly}gr
-      🎯 Recomendación: ${hopper < 30 ? 'Reabastecer tolva' : 'Todo en orden'}
-    `, 'info')
-  }
-  
-  // ========== FUNCIÓN: AJUSTES ==========
-  const handleAjustes = () => {
-    showNotification(`
-      ⚙️ AJUSTES DISPONIBLES:
-      🔔 Notificaciones: Activadas
-      🌙 Modo noche: Desactivado
-      📊 Reportes diarios: Activados
-    `, 'info')
-  }
-  
-  // ========== MOSTRAR NOTIFICACIÓN ==========
-  const showNotification = (message, type = 'info') => {
-    setNotification({ message, type })
-    setTimeout(() => setNotification(null), 3000)
-  }
-  
-  // ========== SIMULAR DESCARGA DE BATERÍA ==========
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBattery(prev => Math.max(0, prev - 0.01))
-    }, 60000) // Cada minuto
-    return () => clearInterval(interval)
-  }, [])
 
   return (
     <div className="layout">
       
-      {/* NOTIFICACIÓN FLOTANTE */}
       {notification && (
         <div className={`notification notification-${notification.type}`}>
-          {notification.message.split('\n').map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
+          {notification.message}
         </div>
       )}
 
-      {/* SIDEBAR */}
       <div className="sidebar">
         <div className="logo">🐾</div>
-        <div className="menu-item active" onClick={handleGetStatus}>
-          🏠
-        </div>
-        <div className="menu-item" onClick={handleAnalisis}>
-          📊
-        </div>
-        <div className="menu-item" onClick={handleAjustes}>
-          ⚙️
-        </div>
-        <div className="menu-item" onClick={handleSync}>
-          🔄
-        </div>
+        <div className="menu-item active">🏠</div>
+        <div className="menu-item">📊</div>
+        <div className="menu-item">⚙️</div>
+        <div className="menu-item" onClick={handleSync}>🔄</div>
       </div>
 
-      {/* MAIN CONTENT */}
       <div className="content">
         
-        {/* HEADER */}
         <div className="header">
           <div className="d-flex align-items-center gap-2">
             <span className="paw">🐾</span>
@@ -233,16 +320,16 @@ function App() {
           </div>
         </div>
 
-        {/* CARD 1 - Estado del dispositivo */}
+        {/* Estado del dispositivo */}
         <div className="card-box">
           <div className="row align-items-center">
             <div className="col-6">
               <p className="card-label">🔋 Estado del dispositivo</p>
               <div className="progress-bar-custom">
-                <div className="progress-fill" style={{ width: `${battery}%` }}></div>
+                <div className="progress-fill" style={{ width: `${battery}%`, background: battery > 20 ? '#28a745' : '#dc3545' }}></div>
               </div>
               <span className="percentage-value">{Math.floor(battery)}%</span>
-              <button className="small-btn" onClick={() => handleFeedNow(30)}>🔋 Cargar</button>
+              <button className="small-btn" onClick={() => handleFeedNow(30)}> Cargar</button>
             </div>
             <div className="col-6 text-center">
               <p className="card-label">🥣 Nivel de Tolva</p>
@@ -250,86 +337,150 @@ function App() {
                 <span>{Math.floor(hopper)}%</span>
               </div>
               <p className="success-text">
-                {hopper > 70 ? '✅ Todo perfecto!' : hopper > 30 ? '⚠️ Precaución' : '❌ ¡Urgente!'}
+                {hopper > 70 ? ' Todo perfecto!' : hopper > 30 ? ' Precaución' : ' ¡Urgente!'}
               </p>
               <button className="small-btn-outline" onClick={handleResetHopper}>
-                🔄 Reabastecer
+                 Reabastecer
               </button>
             </div>
           </div>
         </div>
 
-        {/* CARD 2 - Alimentar + Próxima comida + Ha comido */}
+        {/* Alimentar + Próxima comida + Ha comido */}
         <div className="card-box">
           <div className="row align-items-center">
             <div className="col-4">
               <button className="btn-feed" onClick={() => handleFeedNow(50)}>
-                🦴 ALIMENTAR AHORA (50g)
+                 ALIMENTAR AHORA (50g)
               </button>
               <button className="btn-feed-small" onClick={() => handleFeedNow(25)}>
-                🍖 +25g
+                 +25g
               </button>
             </div>
             <div className="col-4 text-center">
-              <p className="card-label">⏰ Próxima comida</p>
+              <p className="card-label"> Próxima comida</p>
               <h2 className="time-display">{nextMeal}</h2>
               <small className="text-muted">Cuenta regresiva</small>
             </div>
             <div className="col-4 text-center">
-              <p className="card-label">🍽️ Ha comido hoy</p>
+              <p className="card-label"> Ha comido hoy</p>
               <h2 className="amount-display">{Math.floor(consumed)} gr</h2>
               <small className="text-muted">Meta: 800gr/día</small>
             </div>
           </div>
         </div>
 
-        {/* CARD 3 - Programación de comidas */}
+        {/* Programación de comidas */}
         <div className="card-box">
           <div className="d-flex justify-content-between align-items-center">
-            <p className="card-label mb-0">📅 Programación de comidas</p>
+            <p className="card-label mb-0"> Programación de comidas</p>
             <button className="small-btn-add" onClick={() => setShowAddForm(!showAddForm)}>
               {showAddForm ? '✖ Cancelar' : '+ Agregar'}
             </button>
           </div>
           
-          {/* Formulario para agregar comida */}
           {showAddForm && (
             <div className="add-form mt-3">
-              <div className="row g-2">
-                <div className="col-4">
-                  <input 
-                    type="text" 
-                    className="form-control-sm form-control"
-                    placeholder="Nombre"
-                    value={newMealName}
-                    onChange={(e) => setNewMealName(e.target.value)}
-                  />
-                </div>
-                <div className="col-3">
+              <div className="mb-2">
+                <input 
+                  type="text" 
+                  className="form-control"
+                  placeholder="Nombre de la comida (ej: DESAYUNO)"
+                  value={newMealName}
+                  onChange={(e) => setNewMealName(e.target.value.toUpperCase())}
+                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid #ddd', width: '100%' }}
+                />
+              </div>
+              
+              <div className="row g-2 mb-3">
+                <div className="col-6">
                   <input 
                     type="time" 
-                    className="form-control-sm form-control"
+                    className="form-control"
                     value={newMealTime}
                     onChange={(e) => setNewMealTime(e.target.value)}
+                    style={{ padding: '8px', borderRadius: '8px', border: '1px solid #ddd', width: '100%' }}
                   />
                 </div>
-                <div className="col-3">
+                <div className="col-6">
                   <input 
                     type="number" 
-                    className="form-control-sm form-control"
+                    className="form-control"
                     placeholder="Gramos"
                     value={newMealAmount}
                     onChange={(e) => setNewMealAmount(parseInt(e.target.value))}
+                    style={{ padding: '8px', borderRadius: '8px', border: '1px solid #ddd', width: '100%' }}
                   />
                 </div>
-                <div className="col-2">
-                  <button className="btn-save" onClick={handleAddSchedule}>💾</button>
+              </div>
+              
+              <div className="mb-3">
+                <div className="btn-group w-100" style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    className={`btn ${tipoProgramacion === 'recurrente' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setTipoProgramacion('recurrente')}
+                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: tipoProgramacion === 'recurrente' ? '#667eea' : '#6c757d', color: 'white' }}
+                  >
+                     Recurrente
+                  </button>
+                  <button 
+                    className={`btn ${tipoProgramacion === 'fecha' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setTipoProgramacion('fecha')}
+                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: tipoProgramacion === 'fecha' ? '#667eea' : '#6c757d', color: 'white' }}
+                  >
+                     Fecha específica
+                  </button>
                 </div>
               </div>
+              
+              {tipoProgramacion === 'recurrente' && (
+                <div className="mb-3">
+                  <label style={{ fontSize: '12px', marginBottom: '8px', display: 'block' }}>Días de la semana:</label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {diasSemana.map((dia, index) => (
+                      <button
+                        key={index}
+                        onClick={() => toggleDay(index)}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '20px',
+                          border: '1px solid #ddd',
+                          background: selectedDays.includes(index) ? '#667eea' : 'white',
+                          color: selectedDays.includes(index) ? 'white' : '#333',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        {dia}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {tipoProgramacion === 'fecha' && (
+                <div className="mb-3">
+                  <label style={{ fontSize: '12px', marginBottom: '8px', display: 'block' }}>Fecha:</label>
+                  <input 
+                    type="date" 
+                    className="form-control"
+                    value={selectedDate}
+                    min={getToday()}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    style={{ padding: '8px', borderRadius: '8px', border: '1px solid #ddd', width: '100%' }}
+                  />
+                </div>
+              )}
+              
+              <button 
+                onClick={handleAddSchedule}
+                style={{ width: '100%', padding: '10px', background: '#28a745', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                 Guardar comida programada
+              </button>
             </div>
           )}
           
-          {/* Lista de comidas programadas */}
           <div className="schedule-list mt-3">
             {schedules.length === 0 ? (
               <p className="text-muted text-center">No hay comidas programadas</p>
@@ -337,19 +488,30 @@ function App() {
               schedules.map(schedule => (
                 <div key={schedule.id} className="schedule-item">
                   <div className="schedule-info">
-                    <span className="schedule-icon">{schedule.icon}</span>
+                    <span className="schedule-icon">{schedule.icon || '🍽️'}</span>
                     <div>
                       <strong>{schedule.name}</strong>
                       <div className="schedule-detail">
                         {schedule.time} • {schedule.amount}g
+                        {schedule.tipo === 'recurrente' && schedule.days && schedule.days.length > 0 && (
+                          <span style={{ marginLeft: '8px', fontSize: '10px', color: '#667eea' }}>
+                             {schedule.days.map(d => diasSemana[d]).join(', ')}
+                          </span>
+                        )}
+                        {schedule.tipo === 'fecha' && schedule.fecha && (
+                          <span style={{ marginLeft: '8px', fontSize: '10px', color: '#28a745' }}>
+                             {formatearFecha(schedule.fecha)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
                   <button 
                     className="delete-btn"
                     onClick={() => handleDeleteSchedule(schedule.id)}
+                    style={{ background: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer' }}
                   >
-                    ✖ ELIMINAR
+                     ELIMINAR
                   </button>
                 </div>
               ))
@@ -357,28 +519,22 @@ function App() {
           </div>
         </div>
 
-        {/* CARD 4 - Acciones rápidas */}
+        {/* Acciones rápidas */}
         <div className="card-box">
           <div className="row g-2">
             <div className="col-4">
-              <button className="action-btn" onClick={handleAnalisis}>
-                📊 ANÁLISIS
-              </button>
+              <button className="action-btn">ANÁLISIS</button>
             </div>
             <div className="col-4">
-              <button className="action-btn" onClick={handleSync}>
-                🔄 CONTROL
-              </button>
+              <button className="action-btn" onClick={handleSync}> CONTROL</button>
             </div>
             <div className="col-4">
-              <button className="action-btn" onClick={handleAjustes}>
-                ⚙️ AJUSTES
-              </button>
+              <button className="action-btn"> AJUSTES</button>
             </div>
           </div>
           <div className="text-center mt-3">
             <small className="text-muted">
-              📡 Última sincronización: {lastSync}
+               Última sincronización: {lastSync}
             </small>
           </div>
         </div>
