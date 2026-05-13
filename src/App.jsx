@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import './App.css'
-import { db } from './firebase'
+import { db, realtimeDb, ref, set } from './firebase'
 import { 
   doc, onSnapshot, updateDoc, 
-  collection, addDoc, getDoc, setDoc
+  getDoc, setDoc
 } from 'firebase/firestore'
 
 function App() {
@@ -31,29 +31,10 @@ function App() {
   const dispositivoId = 'smartpet_001'
 
   const diasSemana = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM']
-  const diasCompletos = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type })
     setTimeout(() => setNotification(null), 3000)
-  }
-
-  const formatearFecha = (fecha) => {
-    if (!fecha) return ''
-    try {
-      if (typeof fecha === 'string') {
-        const date = new Date(fecha)
-        if (!isNaN(date.getTime())) {
-          return date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
-        }
-      }
-      if (fecha && typeof fecha.toDate === 'function') {
-        return fecha.toDate().toLocaleDateString('es-ES')
-      }
-      return ''
-    } catch (error) {
-      return ''
-    }
   }
 
   const getToday = () => {
@@ -64,6 +45,7 @@ function App() {
     return `${year}-${month}-${day}`
   }
 
+  // Cargar datos desde Firestore
   useEffect(() => {
     const dispositivoRef = doc(db, 'dispositivos', dispositivoId)
     
@@ -78,8 +60,7 @@ function App() {
           setConsumed(data.consumidoHoy || 0)
           
           if (data.horarios && Array.isArray(data.horarios)) {
-            const horariosValidos = data.horarios.filter(h => h && typeof h === 'object')
-            setSchedules(horariosValidos)
+            setSchedules(data.horarios)
           }
         } else {
           await setDoc(dispositivoRef, {
@@ -119,10 +100,10 @@ function App() {
     try {
       const dispositivoRef = doc(db, 'dispositivos', dispositivoId)
       await updateDoc(dispositivoRef, { horarios: nuevosHorarios })
-      showNotification(' Guardado en la nube', 'success')
+      showNotification('✅ Guardado en la nube', 'success')
       return true
     } catch (error) {
-      showNotification(' Error al guardar', 'error')
+      showNotification('❌ Error al guardar', 'error')
       return false
     }
   }
@@ -142,6 +123,7 @@ function App() {
     }
   }
 
+  // Calcular próxima comida
   useEffect(() => {
     const updateNextMeal = () => {
       const now = new Date()
@@ -188,43 +170,54 @@ function App() {
     return () => clearInterval(interval)
   }, [schedules])
 
+  // ========== FUNCIÓN PRINCIPAL: ALIMENTAR AHORA ==========
   const handleFeedNow = async (grams = 50) => {
-    if (hopper <= 0) {
-      showNotification('No hay suficiente comida', 'error')
-      return
+    try {
+      // 1. Enviar ORDEN a Realtime Database (para que ESP32 la vea INMEDIATAMENTE)
+      await set(ref(realtimeDb, `dispositivos/${dispositivoId}/alimentarAhora`), true)
+      await set(ref(realtimeDb, `dispositivos/${dispositivoId}/gramosSolicitados`), grams)
+      await set(ref(realtimeDb, `dispositivos/${dispositivoId}/timestampOrden`), Date.now())
+      
+      console.log("📡 Orden enviada a Realtime Database")
+
+      // 2. Actualizar Firestore (para el dashboard)
+      const newConsumed = consumed + grams
+      const newHopper = Math.max(0, hopper - (grams / 5))
+      const newBattery = Math.max(0, battery - 0.5)
+
+      setConsumed(newConsumed)
+      setHopper(newHopper)
+      setBattery(newBattery)
+
+      await actualizarEstado(newConsumed, newHopper, newBattery)
+
+      showNotification(`🦴 Orden enviada: ${grams}g`, 'success')
+
+    } catch (error) {
+      console.error("Error en handleFeedNow:", error)
+      showNotification('❌ Error enviando orden', 'error')
     }
-    
-    const newConsumed = consumed + grams
-    const newHopper = Math.max(0, hopper - (grams / 5))
-    const newBattery = Math.max(0, battery - 0.5)
-    
-    setConsumed(newConsumed)
-    setHopper(newHopper)
-    setBattery(newBattery)
-    
-    await actualizarEstado(newConsumed, newHopper, newBattery)
-    showNotification(`🦴 ${grams} gramos servidos`, 'success')
   }
   
   const handleResetHopper = async () => {
     setHopper(100)
     await actualizarEstado(consumed, 100, battery)
-    showNotification(' Tolva reabastecida', 'success')
+    showNotification('✅ Tolva reabastecida', 'success')
   }
   
   const handleAddSchedule = async () => {
     if (!newMealName.trim()) {
-      showNotification(' Ingresa un nombre', 'error')
+      showNotification('❌ Ingresa un nombre', 'error')
       return
     }
     
     if (tipoProgramacion === 'recurrente' && selectedDays.length === 0) {
-      showNotification(' Selecciona al menos un día', 'error')
+      showNotification('❌ Selecciona al menos un día', 'error')
       return
     }
     
     if (tipoProgramacion === 'fecha' && !selectedDate) {
-      showNotification(' Selecciona una fecha', 'error')
+      showNotification('❌ Selecciona una fecha', 'error')
       return
     }
     
@@ -258,7 +251,6 @@ function App() {
     }
   }
   
-  // ========== ELIMINAR COMIDA PROGRAMADA ==========
   const handleDeleteSchedule = async (id) => {
     const nuevosHorarios = schedules.filter(schedule => schedule.id !== id)
     setSchedules(nuevosHorarios)
@@ -320,7 +312,6 @@ function App() {
           </div>
         </div>
 
-        {/* Estado del dispositivo */}
         <div className="card-box">
           <div className="row align-items-center">
             <div className="col-6">
@@ -329,7 +320,7 @@ function App() {
                 <div className="progress-fill" style={{ width: `${battery}%`, background: battery > 20 ? '#28a745' : '#dc3545' }}></div>
               </div>
               <span className="percentage-value">{Math.floor(battery)}%</span>
-              <button className="small-btn" onClick={() => handleFeedNow(30)}> Cargar</button>
+              <button className="small-btn" onClick={() => handleFeedNow(30)}>🔋 Cargar</button>
             </div>
             <div className="col-6 text-center">
               <p className="card-label">🥣 Nivel de Tolva</p>
@@ -337,43 +328,41 @@ function App() {
                 <span>{Math.floor(hopper)}%</span>
               </div>
               <p className="success-text">
-                {hopper > 70 ? ' Todo perfecto!' : hopper > 30 ? ' Precaución' : ' ¡Urgente!'}
+                {hopper > 70 ? '✅ Todo perfecto!' : hopper > 30 ? '⚠️ Precaución' : '🔴 ¡Urgente!'}
               </p>
               <button className="small-btn-outline" onClick={handleResetHopper}>
-                 Reabastecer
+                🔄 Reabastecer
               </button>
             </div>
           </div>
         </div>
 
-        {/* Alimentar + Próxima comida + Ha comido */}
         <div className="card-box">
           <div className="row align-items-center">
             <div className="col-4">
               <button className="btn-feed" onClick={() => handleFeedNow(50)}>
-                 ALIMENTAR AHORA (50g)
+                🍖 ALIMENTAR AHORA (50g)
               </button>
               <button className="btn-feed-small" onClick={() => handleFeedNow(25)}>
-                 +25g
+                ➕ +25g
               </button>
             </div>
             <div className="col-4 text-center">
-              <p className="card-label"> Próxima comida</p>
+              <p className="card-label">⏰ Próxima comida</p>
               <h2 className="time-display">{nextMeal}</h2>
               <small className="text-muted">Cuenta regresiva</small>
             </div>
             <div className="col-4 text-center">
-              <p className="card-label"> Ha comido hoy</p>
+              <p className="card-label">🍽️ Ha comido hoy</p>
               <h2 className="amount-display">{Math.floor(consumed)} gr</h2>
               <small className="text-muted">Meta: 800gr/día</small>
             </div>
           </div>
         </div>
 
-        {/* Programación de comidas */}
         <div className="card-box">
           <div className="d-flex justify-content-between align-items-center">
-            <p className="card-label mb-0"> Programación de comidas</p>
+            <p className="card-label mb-0">📅 Programación de comidas</p>
             <button className="small-btn-add" onClick={() => setShowAddForm(!showAddForm)}>
               {showAddForm ? '✖ Cancelar' : '+ Agregar'}
             </button>
@@ -388,7 +377,6 @@ function App() {
                   placeholder="Nombre de la comida (ej: DESAYUNO)"
                   value={newMealName}
                   onChange={(e) => setNewMealName(e.target.value.toUpperCase())}
-                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid #ddd', width: '100%' }}
                 />
               </div>
               
@@ -399,7 +387,6 @@ function App() {
                     className="form-control"
                     value={newMealTime}
                     onChange={(e) => setNewMealTime(e.target.value)}
-                    style={{ padding: '8px', borderRadius: '8px', border: '1px solid #ddd', width: '100%' }}
                   />
                 </div>
                 <div className="col-6">
@@ -409,7 +396,6 @@ function App() {
                     placeholder="Gramos"
                     value={newMealAmount}
                     onChange={(e) => setNewMealAmount(parseInt(e.target.value))}
-                    style={{ padding: '8px', borderRadius: '8px', border: '1px solid #ddd', width: '100%' }}
                   />
                 </div>
               </div>
@@ -419,23 +405,23 @@ function App() {
                   <button 
                     className={`btn ${tipoProgramacion === 'recurrente' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => setTipoProgramacion('recurrente')}
-                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: tipoProgramacion === 'recurrente' ? '#667eea' : '#6c757d', color: 'white' }}
+                    style={{ flex: 1, background: tipoProgramacion === 'recurrente' ? '#667eea' : '#6c757d' }}
                   >
-                     Recurrente
+                    🔁 Recurrente
                   </button>
                   <button 
                     className={`btn ${tipoProgramacion === 'fecha' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => setTipoProgramacion('fecha')}
-                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: tipoProgramacion === 'fecha' ? '#667eea' : '#6c757d', color: 'white' }}
+                    style={{ flex: 1, background: tipoProgramacion === 'fecha' ? '#667eea' : '#6c757d' }}
                   >
-                     Fecha específica
+                    📅 Fecha específica
                   </button>
                 </div>
               </div>
               
               {tipoProgramacion === 'recurrente' && (
                 <div className="mb-3">
-                  <label style={{ fontSize: '12px', marginBottom: '8px', display: 'block' }}>Días de la semana:</label>
+                  <label>Días de la semana:</label>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     {diasSemana.map((dia, index) => (
                       <button
@@ -444,11 +430,8 @@ function App() {
                         style={{
                           padding: '6px 12px',
                           borderRadius: '20px',
-                          border: '1px solid #ddd',
                           background: selectedDays.includes(index) ? '#667eea' : 'white',
-                          color: selectedDays.includes(index) ? 'white' : '#333',
-                          cursor: 'pointer',
-                          fontSize: '12px'
+                          color: selectedDays.includes(index) ? 'white' : '#333'
                         }}
                       >
                         {dia}
@@ -460,23 +443,22 @@ function App() {
               
               {tipoProgramacion === 'fecha' && (
                 <div className="mb-3">
-                  <label style={{ fontSize: '12px', marginBottom: '8px', display: 'block' }}>Fecha:</label>
+                  <label>Fecha:</label>
                   <input 
                     type="date" 
                     className="form-control"
                     value={selectedDate}
                     min={getToday()}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    style={{ padding: '8px', borderRadius: '8px', border: '1px solid #ddd', width: '100%' }}
                   />
                 </div>
               )}
               
               <button 
                 onClick={handleAddSchedule}
-                style={{ width: '100%', padding: '10px', background: '#28a745', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                style={{ width: '100%', padding: '10px', background: '#28a745', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
               >
-                 Guardar comida programada
+                💾 Guardar comida programada
               </button>
             </div>
           )}
@@ -494,14 +476,10 @@ function App() {
                       <div className="schedule-detail">
                         {schedule.time} • {schedule.amount}g
                         {schedule.tipo === 'recurrente' && schedule.days && schedule.days.length > 0 && (
-                          <span style={{ marginLeft: '8px', fontSize: '10px', color: '#667eea' }}>
-                             {schedule.days.map(d => diasSemana[d]).join(', ')}
-                          </span>
+                          <span> 📅 {schedule.days.map(d => diasSemana[d]).join(', ')}</span>
                         )}
                         {schedule.tipo === 'fecha' && schedule.fecha && (
-                          <span style={{ marginLeft: '8px', fontSize: '10px', color: '#28a745' }}>
-                             {formatearFecha(schedule.fecha)}
-                          </span>
+                          <span> 📆 {schedule.fecha}</span>
                         )}
                       </div>
                     </div>
@@ -509,9 +487,9 @@ function App() {
                   <button 
                     className="delete-btn"
                     onClick={() => handleDeleteSchedule(schedule.id)}
-                    style={{ background: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer' }}
+                    style={{ background: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px' }}
                   >
-                     ELIMINAR
+                    🗑️ ELIMINAR
                   </button>
                 </div>
               ))
@@ -519,23 +497,20 @@ function App() {
           </div>
         </div>
 
-        {/* Acciones rápidas */}
         <div className="card-box">
           <div className="row g-2">
             <div className="col-4">
-              <button className="action-btn">ANÁLISIS</button>
+              <button className="action-btn">📊 ANÁLISIS</button>
             </div>
             <div className="col-4">
-              <button className="action-btn" onClick={handleSync}> CONTROL</button>
+              <button className="action-btn" onClick={handleSync}>🎮 CONTROL</button>
             </div>
             <div className="col-4">
-              <button className="action-btn"> AJUSTES</button>
+              <button className="action-btn">⚙️ AJUSTES</button>
             </div>
           </div>
           <div className="text-center mt-3">
-            <small className="text-muted">
-               Última sincronización: {lastSync}
-            </small>
+            <small>🕐 Última sincronización: {lastSync}</small>
           </div>
         </div>
 
