@@ -13,7 +13,8 @@ const firebaseConfig = {
   storageBucket: "smartpet-26294.firebasestorage.app",
   messagingSenderId: "94097820872",
   appId: "1:94097820872:web:fc075aad58161f369d69fd",
-  measurementId: "G-7HP45BZHXD"
+  measurementId: "G-7HP45BZHXD",
+  databaseURL: "https://smartpet-26294-default-rtdb.firebaseio.com",
 };
 
 // Inicializar Firebase
